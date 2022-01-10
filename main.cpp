@@ -57,7 +57,7 @@ void log(const char* s, T value, Args... args)
 //	Macros
 //
 
-#define DEBUG_LOGS
+//#define DEBUG_LOGS
 
 #ifdef DEBUG_LOGS
 	#define CLRSCR() log("\e[1;1H\e[2J")
@@ -86,7 +86,7 @@ bool app_is_running = true;
 namespace cpu
 {
 	// For moving average of cpu metrics
-	const size_t SAMPLES = 10;
+	const size_t SAMPLES = 5;
 	std::vector<float> metrics_queue;
 
 	// First overload to get real status from file
@@ -263,7 +263,7 @@ namespace temp
 	}
 
 	// For moving average of TEMP metrics
-	const size_t SAMPLES = 5;
+	const size_t SAMPLES = 1;
 	std::vector<float> metrics_queue;
 
 	float get_cpu_temperature_metrics()
@@ -613,29 +613,18 @@ int main(int argc, char **argv)
 	// Main loop
 	while (app_is_running)
 	{
-		// std::cout << "CPU: " << cpu::get_cpu_metrics() << "%" << std::endl;
-		// auto [ used, total, percent ] = ram::get_ram_metrics();
-		// std::cout << "RAM: " << used << " / " << total << " (" << percent << "%)" << std::endl;
-		// std::cout << "TEMP: " << temp::get_cpu_temperature_metrics() << " C" << std::endl;
-		// std::cout << "Date: " << date::get_formated_date() << std::endl;
-		// std::cout << "Volume: " << audio::get_vol() << std::endl;
-		// std::cout << "Mic Volume: " << audio::get_mic() << std::endl;
-
-		// auto [ capacity, charging ] = battery::get_battery_metrics();
-		// std::cout << "Battery:\n\t-Capacity: " << capacity << " %\n\t-Charging: " << charging << std::endl;
-
 		std::cout << std::fixed;
-		std::cout << std::setprecision(2);
-		std::cout << "CPU: " << cpu::get_cpu_metrics() << "%";
+		std::cout << std::setprecision(1);
+		std::cout << " " << cpu::get_cpu_metrics() << "%";
+		std::cout << " |  " << temp::get_cpu_temperature_metrics() << " ºC" ;
 		auto [ used, total, percent ] = ram::get_ram_metrics();
-		std::cout << " RAM: " << used << " / " << total << " (" << percent << "%)";
-		std::cout << " TEMP: " << temp::get_cpu_temperature_metrics() << " C" ;
-		std::cout << " Date: " << date::get_formated_date();
-		std::cout << " Volume: " << audio::get_vol();
-		std::cout << " Mic Volume: " << audio::get_mic();
-
+		std::cout << " |   " << used << " / " << total << " (" << percent << "%)";
 		auto [ capacity, charging ] = battery::get_battery_metrics();
-		std::cout << " Battery:-Capacity: " << capacity << " %-Charging: " << charging << std::endl;
+		std::cout << " | " << (charging ? "\uf1e6 " : "\uf240 ") << capacity << "%";
+		std::cout << " | " << date::get_formated_date();
+		std::cout << " |  " << audio::get_vol() << "%";
+		std::cout << " |  " << audio::get_mic() << "%";
+		std::cout << std::endl;
 
 		// for (int i = 50; i < 100; ++i)
 		// {
@@ -645,7 +634,7 @@ int main(int argc, char **argv)
 		// 	std::cout << "Volume: " << audio::get_vol() << std::endl;
 		// 	std::cout << "Mic Volume: " << audio::get_mic() << std::endl;
 		// }
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		std::this_thread::sleep_for(std::chrono::milliseconds(250));
 	}
 
 	return 0;
