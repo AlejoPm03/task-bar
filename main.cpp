@@ -385,6 +385,12 @@ namespace audio
 	snd_mixer_elem_t* mic_element;
 	snd_mixer_selem_id_t* mic_sid;
 
+	struct status
+	{
+		long volume;
+		bool is_active;
+	};
+
 	void init_connection(
 		const char* card, const char* mixer_name, const int mixer_index,
 		snd_mixer_t** handle, snd_mixer_elem_t** element, snd_mixer_selem_id_t** sid
@@ -444,10 +450,11 @@ namespace audio
 		snd_mixer_close(mic_handle);
 	}
 
-	long get_mic()
+	status get_mic()
 	{
 		snd_mixer_handle_events(mic_handle);
 
+		int is_active_left = 0, is_active_right = 0;
 		long min_volume, max_volume;
 		long out_volume_left, out_volume_right;
 
@@ -456,13 +463,25 @@ namespace audio
 		if (snd_mixer_selem_get_capture_volume(mic_element, SND_MIXER_SCHN_FRONT_LEFT, &out_volume_left) < 0)
 		{
 			snd_mixer_close(mic_handle);
-			LOG_ERROR("Failed to get volume of sound element in left chanel");
+			LOG_ERROR("Failed to get volume of mic element in left chanel");
 		}
 
 		if (snd_mixer_selem_get_capture_volume(mic_element, SND_MIXER_SCHN_FRONT_RIGHT, &out_volume_right) < 0)
 		{
 			snd_mixer_close(mic_handle);
-			LOG_ERROR("Failed to get volume of sound element in rigth chanel");
+			LOG_ERROR("Failed to get volume of mic element in rigth chanel");
+		}
+
+		if (snd_mixer_selem_get_capture_switch(mic_element, SND_MIXER_SCHN_FRONT_LEFT, &is_active_left) < 0)
+		{
+			snd_mixer_close(mic_handle);
+			LOG_ERROR("Failed to get switch status of mic element in left chanel");
+		}
+
+		if (snd_mixer_selem_get_capture_switch(mic_element, SND_MIXER_SCHN_FRONT_RIGHT, &is_active_right) < 0)
+		{
+			snd_mixer_close(mic_handle);
+			LOG_ERROR("Failed to get switch status of mic element in rigth chanel");
 		}
 
 		// Calculate real maximum volume
@@ -477,7 +496,7 @@ namespace audio
 		out_volume_right = 100 * (out_volume_right) / max_volume;
 
 		// Return max of two chanel
-		return std::max(out_volume_left, out_volume_right);
+		return {std::max(out_volume_left, out_volume_right), (bool(is_active_left) || bool(is_active_right))};
 	}
 
 	void set_mic(long in_volume)
@@ -499,20 +518,21 @@ namespace audio
 		if (snd_mixer_selem_set_capture_volume(mic_element, SND_MIXER_SCHN_FRONT_LEFT, in_volume) < 0)
 		{
 			snd_mixer_close(mic_handle);
-			LOG_ERROR("Failed to set volume of sound element in left chanel");
+			LOG_ERROR("Failed to set volume of mic element in left chanel");
 		}
 
 		if (snd_mixer_selem_set_capture_volume(mic_element, SND_MIXER_SCHN_FRONT_RIGHT, in_volume) < 0)
 		{
 			snd_mixer_close(mic_handle);
-			LOG_ERROR("Failed to set volume of sound element in rigth chanel");
+			LOG_ERROR("Failed to set volume of mic element in rigth chanel");
 		}
 	}
 
-	long get_vol()
+	status get_vol()
 	{
 		snd_mixer_handle_events(volume_handle);
 
+		int is_active_right, is_active_left = 0;
 		long min_volume, max_volume;
 		long out_volume_left, out_volume_right;
 
@@ -530,6 +550,18 @@ namespace audio
 			LOG_ERROR("Failed to get volume of sound element in rigth chanel");
 		}
 
+		if (snd_mixer_selem_get_playback_switch(volume_element, SND_MIXER_SCHN_FRONT_RIGHT, &is_active_right) < 0)
+		{
+			snd_mixer_close(volume_handle);
+			LOG_ERROR("Failed to get switch state of sound element in rigth chanel");
+		}
+		
+		if (snd_mixer_selem_get_playback_switch(volume_element, SND_MIXER_SCHN_FRONT_LEFT, &is_active_left) < 0)
+		{
+			snd_mixer_close(volume_handle);
+			LOG_ERROR("Failed to get switch state of sound element in rigth chanel");
+		}
+
 		// Calculate real maximum volume
 		max_volume -= min_volume;
 
@@ -542,7 +574,7 @@ namespace audio
 		out_volume_right = 100 * (out_volume_right) / max_volume;
 
 		// Return max of two chanel
-		return std::max(out_volume_left, out_volume_right);
+		return status{std::max(out_volume_left, out_volume_right), (bool(is_active_left) || bool(is_active_right))};
 	}
 
 	void set_vol(long in_volume)
@@ -622,8 +654,10 @@ int main(int argc, char **argv)
 		auto [ capacity, charging ] = battery::get_battery_metrics();
 		std::cout << " | " << (charging ? "\uf1e6 " : "\uf240 ") << capacity << "%";
 		std::cout << " | " << date::get_formated_date();
-		std::cout << " |  " << audio::get_vol() << "%";
-		std::cout << " |  " << audio::get_mic() << "%";
+		auto [ volume, vol_is_active] = audio::get_vol();
+		std::cout << " |"<< (vol_is_active ? "  " : " 婢 ") << volume << "%";
+		auto [ mic, mic_is_active] = audio::get_mic();
+		std::cout << " |"<< (mic_is_active ? "" : "") << mic << "%";
 		std::cout << std::endl;
 
 		// for (int i = 50; i < 100; ++i)
