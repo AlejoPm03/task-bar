@@ -286,21 +286,29 @@ namespace temp
 //
 namespace battery
 {
+	typedef struct
+	{
+		float power_now;
+		float energy_now;  // in Wh
+		float energy_full; // in Wh
+	} energy_t;
+
 	struct status
 	{
 		int capacity;
 		bool charging;
+		std::string remaining_time;
 	};
 
 	// Constants
-	const char* POWER_SUPPLIES_DIR = "/sys/class/power_supply/";
-	const char* BATTERY_PREFIX = "BAT";
+	const char *POWER_SUPPLIES_DIR = "/sys/class/power_supply/";
+	const char *BATTERY_PREFIX = "BAT";
 	
 	// Supplies path
 	const std::filesystem::path power_supplies{POWER_SUPPLIES_DIR};
 
 	// Supplies storages
-	std::map<int, std::pair<std::string, std::string>> batteries;
+	std::map<int, std::vector<std::string>> batteries;
 
 	bool has_battery()
 	{
@@ -309,7 +317,7 @@ namespace battery
 
 	void check_supplies()
 	{
-		for (const auto& entry : std::filesystem::directory_iterator(power_supplies))
+		for (const auto &entry : std::filesystem::directory_iterator(power_supplies))
 		{
 			std::string entry_path = entry.path().string();
 
@@ -335,25 +343,100 @@ namespace battery
 				ss << entry_path << "/status";
 				std::string status_path = ss.str();
 
-				batteries[index] = { capacity_path, status_path };
+				ss.clear();
+				ss.str(std::string());
+				ss << entry_path << "/power_now";
+				std::string power_now_path = ss.str();
+
+				ss.clear();
+				ss.str(std::string());
+				ss << entry_path << "/energy_now";
+				std::string energy_now_path = ss.str();
+
+				ss.clear();
+				ss.str(std::string());
+				ss << entry_path << "/energy_full";
+				std::string energy_full_path = ss.str();
+
+				batteries[index] = {capacity_path, status_path, power_now_path,
+									energy_now_path, energy_full_path};
 			}
 		}
+			}
+
+	typedef struct
+	{
+		unsigned int last_value_index;
+		const size_t samples;
+		std::vector<float> values = std::vector<float>(samples);
+		float avg = 0;
+	} circular_buffer_t;
+
+	float moving_average(circular_buffer_t *buff, float value)
+	{
+		if (++buff->last_value_index >= buff->samples)
+			buff->last_value_index = 0;
+
+		buff->avg -= buff->values[buff->last_value_index];
+		buff->values[buff->last_value_index] = value;
+
+		buff->avg += value;
+
+		return buff->avg / buff->samples;
+		}
+
+	std::string get_battery_time(energy_t *energy, bool charging)
+	{
+		static circular_buffer_t remaining_time = {
+			.last_value_index = 0,
+			.samples = 50};
+
+		if (energy->power_now == 0)
+			return ("0:00");
+
+		float remaining_time_f = moving_average(&remaining_time,
+												(charging ? energy->energy_full : energy->energy_now) / energy->power_now);
+
+		int hours = remaining_time_f;
+		int mins = (remaining_time_f - hours) * 60;
+
+		return std::to_string(hours) + ":" + (mins < 10 ? "0" : "") + std::to_string(mins);
 	}
 
 	status get_battery_metrics()
 	{
-		std::ifstream capacity_file(batteries.at(0).first);
-		std::ifstream status_file (batteries.at(0).second);
+		const float energy_coeff = 1 / 1e6;
+		const float power_coeff = 1 / 1e6;
+		std::ifstream capacity_file(batteries.at(0)[0]);
+		std::ifstream status_file(batteries.at(0)[1]);
+		std::ifstream power_now_file(batteries.at(0)[2]);
+		std::ifstream energy_now_file(batteries.at(0)[3]);
+		std::ifstream energy_full_file(batteries.at(0)[4]);
 
 		int battery_value;
 		capacity_file >> battery_value;
 
 		std::string battery_status;
 		status_file >> battery_status;
+		bool charging = (battery_status != "Discharging");
 
-		return status {
+		energy_t energy;
+
+		power_now_file >> energy.power_now;
+		energy.power_now *= power_coeff;
+
+		energy_now_file >> energy.energy_now;
+		energy.energy_now *= energy_coeff;
+
+		energy_full_file >> energy.energy_full;
+		energy.energy_full *= energy_coeff;
+
+		std::string remaining_time = get_battery_time(&energy, charging);
+
+		return status{
 			battery_value,
-			(battery_status != "Discharging")
+			charging,
+			remaining_time,
 		};
 	}
 }
@@ -651,8 +734,9 @@ int main(int argc, char **argv)
 		std::cout << " |  " << temp::get_cpu_temperature_metrics() << " ºC" ;
 		auto [ used, total, percent ] = ram::get_ram_metrics();
 		std::cout << " |   " << used << " / " << total << " (" << percent << "%)";
-		auto [ capacity, charging ] = battery::get_battery_metrics();
-		std::cout << " | " << (charging ? "\uf1e6 " : "\uf240 ") << capacity << "%";
+		auto [capacity, charging, remaining_time] = battery::get_battery_metrics();
+		std::cout << " | " << (charging ? "\uf1e6 " : "\uf240 ") << capacity << "%"
+				  << "(" << remaining_time << ")";
 		std::cout << " | " << date::get_formated_date();
 		auto [ volume, vol_is_active] = audio::get_vol();
 		std::cout << " |"<< (vol_is_active ? "  " : " 婢 ") << volume << "%";
