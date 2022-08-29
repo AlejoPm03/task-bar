@@ -372,6 +372,15 @@ namespace battery
 		float avg = 0;
 	} circular_buffer_t;
 
+	void clear_circular_buffer(circular_buffer_t *buff, float value)
+	{
+		for (int i = 0; i < buff->samples; ++i)
+		{
+			buff->values[i] = value;
+			buff->avg = value * buff->samples;
+		}
+	}
+
 	float moving_average(circular_buffer_t *buff, float value)
 	{
 		if (++buff->last_value_index >= buff->samples)
@@ -379,20 +388,27 @@ namespace battery
 
 		buff->avg -= buff->values[buff->last_value_index];
 		buff->values[buff->last_value_index] = value;
-
 		buff->avg += value;
-
 		return buff->avg / buff->samples;
 		}
 
 	std::string get_battery_time(energy_t *energy, bool charging)
 	{
+
 		static circular_buffer_t remaining_time = {
 			.last_value_index = 0,
 			.samples = 50};
 
+		static bool was_charging = charging;
+
 		if (energy->power_now == 0)
 			return ("0:00");
+
+		if (was_charging != charging)
+		{
+			was_charging = charging;
+			clear_circular_buffer(&remaining_time, (charging ? energy->energy_full : energy->energy_now) / energy->power_now);
+		}
 
 		float remaining_time_f = moving_average(&remaining_time,
 												(charging ? energy->energy_full : energy->energy_now) / energy->power_now);
