@@ -729,6 +729,100 @@ namespace date
 //	NET Metrics
 //
 
+//
+//	AUR Metrics
+//
+namespace AUR
+{
+	const std::string PACMAN_LOG_PATH = "/var/log/pacman.log";
+	#include <sys/stat.h>
+
+
+	/**
+	 * @brief converts pacman time string to time_t
+	 * @param std::string string with format [yyyy-mm-ddxhh:mm:ss-xxxx] ....
+	 * @return std::time_t 
+	 */
+	std::time_t str2time_t(std::string string)
+	{
+		struct tm  tm;
+		time_t rawtime;
+		time(&rawtime);
+		tm = *localtime(&rawtime);
+		tm.tm_year = stoi(string.substr(1, 4)) - 1900;
+		tm.tm_mon = stoi(string.substr(6, 2)) - 1;
+		tm.tm_mday = stoi(string.substr(9, 2));
+		tm.tm_hour = stoi(string.substr(12, 2));
+		tm.tm_min = stoi(string.substr(15, 2));
+		tm.tm_sec =  stoi(string.substr(18, 2));
+		return mktime(&tm);
+	}
+
+	/**
+	 * @brief converts time in seconds to string
+	 * @param double time in seconds
+	 * @return std::string with format mm-dd hh:mm
+	 */
+	std::string sec2str(double time)
+	{
+		std::stringstream time_ss;
+
+		unsigned int months = time/(30 * 24 * 60 * 60);
+		time = time - months * (30 * 24 * 60 * 60);
+		unsigned int days = time / (24 * 60 * 60);
+		time = time - days * (24 * 60 * 60);
+		unsigned int hours = time / (60 * 60);
+		time = time - hours * (60 * 60);
+		unsigned int mins = time / 60;
+		time_ss << "m:" << months <<" d:"<< days << " h:" << hours;
+
+		return time_ss.str();
+	}
+
+	std::time_t get_last_log_write()
+	{
+		struct stat fileInfo;
+		if(stat(PACMAN_LOG_PATH.c_str(), &fileInfo))
+		{
+			std::cerr << "Error getting log metadata" << std::endl;
+			return 0;
+		}
+      	return fileInfo.st_mtime;      // Last mod time
+	}
+
+	std::string get_last_update_date()
+	{
+
+		static std::time_t last_log_write = 0;
+		static std::string last_pacman_update = "[1970-01-01T00:00:00-0300]";
+		
+		const std::string SYSTEM_UPGRADE_STR("[yyyy-mm-ddxhh:mm:ss-xxxx] [PACMAN] starting full system upgrade");
+
+		if (get_last_log_write() > last_log_write)
+		{
+			std::ifstream pacman_log(PACMAN_LOG_PATH);
+			std::cout << "update!\n";
+			last_log_write = get_last_log_write();
+			
+			for (std::string line; std::getline(pacman_log, line);)
+			{
+				if (line.size() == SYSTEM_UPGRADE_STR.size())
+				{
+					std::cout << line << "\n";
+					if (line.substr(39) == SYSTEM_UPGRADE_STR.substr(39))
+						last_pacman_update = line;
+				}
+			}
+			pacman_log.close();
+		}
+
+		//convert to string and get diference between time now and last update
+		double diff_time = difftime(time(0), str2time_t(last_pacman_update));
+		
+		return sec2str(diff_time);
+	}
+}
+
 int main(int argc, char **argv)
 {
 	// const wchar_t* a = L"⡀⡄⡆⡇";
@@ -746,7 +840,8 @@ int main(int argc, char **argv)
 	{
 		std::cout << std::fixed;
 		std::cout << std::setprecision(1);
-		std::cout << " " << cpu::get_cpu_metrics() << "%";
+		std::cout << " " << AUR::get_last_update_date();
+		std::cout << " |  " << cpu::get_cpu_metrics() << "%";
 		std::cout << " |  " << temp::get_cpu_temperature_metrics() << " ºC" ;
 		auto [ used, total, percent ] = ram::get_ram_metrics();
 		std::cout << " |   " << used << " / " << total << " (" << percent << "%)";
@@ -759,7 +854,6 @@ int main(int argc, char **argv)
 		auto [ mic, mic_is_active] = audio::get_mic();
 		std::cout << " |"<< (mic_is_active ? "" : "") << mic << "%";
 		std::cout << std::endl;
-
 		// for (int i = 50; i < 100; ++i)
 		// {
 		// 	audio::set_vol(i);
